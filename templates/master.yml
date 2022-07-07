@@ -1,0 +1,156 @@
+---
+Description: "IRAP PROTECTED Reference Architecture (qs-1q8ko8tkk)"
+Metadata:
+  LICENSE: Apache License Version 2.0
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network configuration
+        Parameters:
+          - AvailabilityZones
+      - Label:
+          default: IRAP PROTECTED configuration
+        Parameters:
+          - KMSAdmin
+          - KMSUser
+          - SnsEmail
+          - DBUser
+          - DBPassword
+          - EnableGuardDuty
+      - Label:
+          default: Quick Start configuration
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+    ParameterLabels:
+      KMSAdmin:
+        default: IAM user with ability to administrative KMS key
+      KMSUser:
+        default: IAM user with ability to use KMS key
+      SnsEmail:
+        default: Email address to send Guard Duty alerts
+      DBUser:
+        default: The database admin account username
+      DBPassword:
+        default: The database password
+      EnableGuardDuty:
+        default: Enable Guard Duty Detector
+      AvailabilityZones:
+        default: Availability zones
+      QSS3BucketName:
+        default: Quick Start S3 bucket name
+      QSS3KeyPrefix:
+        default: Quick Start S3 key prefix
+      KeyPairName:
+        default: SSH key name
+Parameters:
+  AvailabilityZones:
+    Description: >-
+      List of Availability Zones to use for the subnets in the VPC. Only two
+      Availability Zones are used for this deployment, and the logical order of
+      your selections is preserved.
+    Type: 'List<AWS::EC2::AvailabilityZone::Name>'
+  QSS3BucketName:
+    AllowedPattern: "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$"
+    ConstraintDescription: "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)."
+    Default: aws-quickstart
+    Description: "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)."
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: "^[0-9a-zA-Z-/]*$"
+    ConstraintDescription: "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/)."
+    Default: quickstart-compliance-irap-protected/
+    Description: "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/)."
+    Type: String
+  KMSAdmin:
+    Description: User with the ability to administer the KMS key
+    Type: String
+  KMSUser:
+    Description: User with the ability to use the KMS key
+    Type: String
+  SnsEmail:
+    Description: Destination for GuardDuty email alerts
+    Type: String
+  DBUser:
+    NoEcho: 'true'
+    Description: Database administrator account user name.
+    Type: String
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric
+      characters.
+  DBPassword:
+    NoEcho: 'true'
+    Description: Database administrator account password
+    Type: String
+    MinLength: '1'
+    MaxLength: '41'
+  KeyPairName:
+    Description: The EC2 keypair to be used for the Auto Scaling Group
+    Type: String
+  EnableGuardDuty:
+    Description: Do you wish to enable Guard Duty?
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+Conditions:
+  GovCloudCondition:
+    Fn::Or:
+      - !Equals
+        - !Ref AWS::Region
+        - "us-gov-east-1"
+      - !Equals
+        - !Ref AWS::Region
+        - "us-gov-west-1"
+Resources:
+  VPCStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub
+        - https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/vpc.yml
+        - QSS3Region:
+            Fn::If:
+              - GovCloudCondition
+              - s3-us-gov-west-1
+              - s3
+      Parameters:
+        AvailabilityZones:
+          Fn::Join:
+            - ','
+            - !Ref AvailabilityZones
+  IRAPPROTECTEDStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub
+        - https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/irap-protected.yml
+        - QSS3Region:
+            Fn::If:
+              - GovCloudCondition
+              - s3-us-gov-west-1
+              - s3
+      Parameters:
+        KMSAdmin: !Ref KMSAdmin
+        KMSUser: !Ref KMSUser
+        SnsEmail: !Ref SnsEmail
+        DBUser: !Ref DBUser
+        DBPassword: !Ref DBPassword
+        KeyPairName: !Ref KeyPairName
+        VPCID: !GetAtt VPCStack.Outputs.VPCID
+        DatabaseSubnet1: !GetAtt VPCStack.Outputs.DatabaseSubnet1AID
+        DatabaseSubnet2: !GetAtt VPCStack.Outputs.DatabaseSubnet2AID
+        PrivateSubnet1: !GetAtt VPCStack.Outputs.PrivateSubnet1AID
+        PrivateSubnet2: !GetAtt VPCStack.Outputs.PrivateSubnet2AID
+        PublicSubnet1: !GetAtt VPCStack.Outputs.PublicSubnet1ID
+        PublicSubnet2: !GetAtt VPCStack.Outputs.PublicSubnet2ID
+        LambdaSubnet1: !GetAtt VPCStack.Outputs.LambdaSubnet1AID
+        LambdaSubnet2: !GetAtt VPCStack.Outputs.LambdaSubnet2AID
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Ref QSS3KeyPrefix
+        EnableGuardDuty: !Ref EnableGuardDuty
+Outputs:
+  URL:
+    Description: URL of the website
+    Value: !GetAtt IRAPPROTECTEDStack.Outputs.URL
